@@ -38,7 +38,7 @@ fi
 
 if [ $1 == $DEL_PARM ];then
   INFO="`echo "$4" | awk -F{ '{print $2}'| awk -F} '{print $1}'\
-        | sed 's/\"//g' | sed 's/:/=/g' | sed 's/,/\&/g'| sed 's/ /%20/g'`"
+        | sed 's/\"//g' | sed 's/:/=/g' | sed 's/,/\&/g'| sed 's/ /%20/g' | sed 's/\+/%2B/g'`"
 else
   INFO="$4"
 fi
