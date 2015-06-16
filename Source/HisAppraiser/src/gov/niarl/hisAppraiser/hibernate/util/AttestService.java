@@ -46,6 +46,7 @@ public class AttestService {
 	 * result.
 	 */
 	public static AttestRequest doAnalyses(AttestRequest attestRequest, String machineName) {
+		System.out.println("here is in the do analysis script, this is the machine name " + machineName);
 		String analysisReqString = "VALIDATE_PCR;COMPARE_REPORT";
 		if (attestRequest.getAnalysisRequest() != null) {
 			analysisReqString = attestRequest.getAnalysisRequest();
@@ -63,6 +64,8 @@ public class AttestService {
 				attestRequest = analysisLauncher(attestRequest, analysis);
 			}
 		}
+
+		System.out.println("here is in the end of do analysis script, this is the analysisReqString " + analysisReqString);
 		return attestRequest;
 	}
 
@@ -145,19 +148,45 @@ public class AttestService {
 			                     "URL=" + AttestUtil.getDownloadIRWebServiceUrl(), "IR=" + attestRequest.getAuditLog().getId()};
 			Runtime r = Runtime.getRuntime();
 			String script_string = analysisType.getURL();
+			System.out.println("here is in the do analysis launcher, this is the script_string " + script_string);
+			System.out.println("here is in the do analysis launcher function after the exec call, this is the analysis " + analysisType.getName());
 			Process p = r.exec(script_string, env_var);
 
+			for (String variabl : env_var) {
+
+				System.out.println("here is in the do analysis launcher function after the exec call, this is the variables" + variabl);
+			}
+
+			String currentLine;
 			BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+
+			while((currentLine = br.readLine()) != null){
+
+				System.out.println("here is in after get BufferedReader " + currentLine);
+			}
 			BufferedReader brerr = new BufferedReader(new InputStreamReader(p.getErrorStream()));
 
+			while((currentLine = brerr.readLine()) != null){
+				System.out.println("here is in after get BufferedReader Error " + currentLine);
+			}
+
 			int exitCode = p.waitFor();
+
+			System.out.println("here is in after exitCode " + exitCode);
+
 
 			String line = "";
 			analysisOutput = "";
 
+			System.out.println("here is in the middle of nowhere " );
+
 			while ((line = br.readLine()) != null) {
 				analysisOutput += line + "\n";
+				System.out.println("here is in the do analysis launcher function after the exec call, this is the line" + line);				
 			}
+
+			System.out.println("here is in the do analysis launcher function after the exec call, this isanalysisOutput" + analysisOutput);				
+
 			analysisOutput = analysisOutput.substring(0, Math.min(analysisOutput.length(), 80));
 
 			analysisOutput = analysisOutput.trim();
