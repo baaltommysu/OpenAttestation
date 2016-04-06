@@ -440,7 +440,8 @@ public class HisSetup {
 				"KeyIndex=1\r\n" + 
 				"TpmQuoteExecutableName=NIARL_TPM_Module.exe\r\n" + 
 				"SplashImage=HIS07.jpg\r\n" + 
-				"TrustStore=TrustStore.jks\r\n";
+				"TrustStore=TrustStore.jks\r\n" + 
+				“AddContainerAnalysisSupport=False\r\n”;
 			
 			try {
 				fos.write(toWrite.getBytes("US-ASCII"));
