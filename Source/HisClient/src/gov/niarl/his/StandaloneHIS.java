@@ -59,9 +59,12 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder; 
 
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException; 
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 import javax.xml.bind.JAXBContext;
@@ -87,6 +90,8 @@ import org.trustedcomputinggroup.xml.schema.integrity_report_v1_0_.TpmDigestValu
 import org.trustedcomputinggroup.xml.schema.simple_object_v1_0_.SimpleObjectType;
 import org.trustedcomputinggroup.xml.schema.simple_object_v1_0_.ValuesType;
 import org.trustedcomputinggroup.xml.schema.core_integrity_v1_0_1_.DigestValueType;
+import org.trustedcomputinggroup.xml.schema.core_integrity_v1_0_1_.ContainerType;
+import org.trustedcomputinggroup.xml.schema.core_integrity_v1_0_1_.HostType;
 import org.w3._2000._09.xmldsig_.KeyInfoType;
 import org.w3._2000._09.xmldsig_.KeyValueType;
 import org.w3._2000._09.xmldsig_.SignatureMethodType;
@@ -180,7 +185,10 @@ public class StandaloneHIS
     int hostOS=0;
     //host name of the local computer
     String computerName= "unknownHost";
-
+    //boolean to indicate if insert in the IR elements for
+    //containers analysis
+    boolean addContainerAnalysisSupport = false;
+    
     //name for the log4j properties file
     public static final String LOG4J_PROPERTIES_FILE = "log4j.properties";
 
@@ -214,6 +222,7 @@ public class StandaloneHIS
     public static final String OS_TYPE_LABEL = "OSType";
     public static final String VERIFY_COMMAND_LABEL = "VerifyClientAction";
     public static final String CLEAN_COMMAND_LABEL = "CleanClientAction";
+    public static final String ADD_CONTAINER_ANALYSIS_SUPPORT = "AddContainerAnalysisSupport";
 
     //OS Type ID
     static final int WINDOWS_OS = 1;
@@ -344,7 +353,7 @@ public class StandaloneHIS
         boolean dynamicHIS = false;
         boolean showSplash = false;
         boolean brandHIS = false;
-
+        
         //bounds check for presence of the first argument
         if(args.length>=1)
         {
@@ -572,7 +581,11 @@ public class StandaloneHIS
         	//so get computer name from the exception msg
     		StringTokenizer st = new StringTokenizer(ex.getMessage());
     		while (st.hasMoreTokens()) computerName = st.nextToken();
-        }       
+        }     
+        
+        //pull from properties a boolean indicating if inserting
+        //Container XML elements in the IR for making container analysis
+        addContainerAnalysisSupport = new Boolean(hisProperties.getProperty(ADD_CONTAINER_ANALYSIS_SUPPORT, "False"));
 
         //pull the splash image from properties
         String splashFile = hisProperties.getProperty(SPLASH_IMAGE_LABEL);
@@ -1381,8 +1394,12 @@ public class StandaloneHIS
 	private SnapshotType initializeSnapshot(String UUID, int pcrIndex) {
 		SnapshotType snap = new SnapshotType();
 
+		//ComponentIDType component = new ComponentIDType();
 		ComponentIDType component = new ComponentIDType();
 		VendorIdType vendorID = new VendorIdType();
+		
+		Map<String, String> containerMappings;
+		List<String> hostDevices;
 
 		vendorID.setName(hisProperties.getProperty(VENDOR_NAME_LABEL, "JJ")); 
 		vendorID.getTcgVendorIdOrSmiVendorIdOrVendorGUID().add(new ObjectFactory().createVendorIdTypeSmiVendorId(new BigInteger("0")));
@@ -1397,6 +1414,25 @@ public class StandaloneHIS
 			component.setSimpleName ("JJ");
 		component.setVersionBuild (new BigInteger ("1250694000000"));
 		component.setVersionString ("JJ");
+		
+		//If the relative property is set to true and pcr index is 10, it adds a list of Container
+		//XMl elements and an Host element; those are for mapping with device numbers;
+		if (addContainerAnalysisSupport && pcrIndex == 10){
+			containerMappings = retrieveMapDmContainers();
+			for (String key : containerMappings.keySet()) {
+				ContainerType container = new ContainerType();
+				container.setId(key);
+				container.setDevId(containerMappings.get(key));
+				component.getContainer().add(container);
+			}
+			
+			hostDevices = retrieveHostDevices();
+			HostType host = new HostType();
+			for (int i = 0; i < hostDevices.size(); i++){
+				host.getDevId().add(hostDevices.get(i));
+				component.setHost(host);
+			}
+		}
 
 		DigestMethodType digestMethod = new DigestMethodType();
 		digestMethod.setAlgorithm ("unknown");
@@ -1410,6 +1446,82 @@ public class StandaloneHIS
 
 		snap.setComponentID(component);
 		return snap;
+	}
+	
+	
+	/** 
+	 * Retrieve a map indicating the association between DeviceMapper
+	 * virtual device numbers and the relative Docker container Id
+	 * 
+	 * @return A map containing the association
+	 */
+	public Map<String, String> retrieveMapDmContainers() {
+		Map<String, String> mappings = new HashMap();
+		String dmMajorNumber = null;
+		
+		try{
+	        Process p = Runtime.getRuntime().exec("ls -al /dev");
+	        String s;
+	        BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+	        while ((s = br.readLine()) != null){
+	        	if(s.contains("dm-0")){
+	        		dmMajorNumber = s.trim().replaceAll(" +", " ").split(" ")[4];
+	        		dmMajorNumber = dmMajorNumber.substring(0, dmMajorNumber.length()-1);
+	        	}
+	        }
+	        p.waitFor();
+	        p.destroy();
+	        
+	        if (dmMajorNumber != null){
+	        	File folder = new File("/dev/mapper");
+				File[] listOfFiles = folder.listFiles();
+
+                // search entries that contains 'docker' name and that are not the base pool
+                // each of them is an entry relative to an active Docker container
+			    for (int i = 0; i < listOfFiles.length; i++) {
+			      if(listOfFiles[i].getName().contains("docker") && !listOfFiles[i].getName().contains("pool")){
+			    	  String devNumber = dmMajorNumber + ":" + listOfFiles[i].getCanonicalFile().getName().substring(3);
+			    	  String id = (listOfFiles[i].getName().split("-")[3]).substring(0, 12);
+			    	  mappings.put(id, devNumber);
+			      }
+			    }
+	        }
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+		return mappings;
+	}
+	
+	/** 
+	 * Retrieve a list with all device numbers associated to the host
+	 * 
+	 * @return A list containing the values
+	 */
+	public List<String> retrieveHostDevices(){
+		List devList = new ArrayList();
+		Process p;
+		String s;
+		String devNumber;
+		
+		try{
+	        p = Runtime.getRuntime().exec("lsblk");
+	        BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+	        s = br.readLine();
+	        while ((s = br.readLine()) != null){
+	        	if(!s.contains("docker")){
+	        		devNumber = s.trim().replaceAll(" +", " ").split(" ")[1];
+	        		devList.add(devNumber);
+	        	}
+	        }
+	        p.waitFor();
+	        p.destroy();
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+		
+		return devList;
 	}
 
 	/** 
@@ -1932,6 +2044,7 @@ public class StandaloneHIS
         }
         catch(Exception e)
         {
+        	e.printStackTrace();
             throw new Exception( "Web service error: " + e.getMessage() );
         }
         
@@ -2306,6 +2419,3 @@ class StreamOutput extends Thread
     }    
     
 }
-
-
-
