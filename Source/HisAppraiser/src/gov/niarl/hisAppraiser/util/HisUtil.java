@@ -191,7 +191,8 @@ public class HisUtil {
 	 */
 	public static byte[] generateSecureRandom(int length) {
 		try {
-			SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
+			//SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
+			SecureRandom random = SecureRandom.getInstance("NativePRNG");
 			byte[] bytes = new byte[length];
 			random.nextBytes(bytes);
 			return bytes;
